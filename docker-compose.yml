@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+    db:
+        image: postgres:12
+        container_name: hero_postgres
+        command:
+            - "postgres"
+            - "-c"
+            - "max_connections=50"
+            - "-c"
+            - "shared_buffers=1GB"
+            - "-c"
+            - "effective_cache_size=4GB"
+            - "-c"
+            - "work_mem=16MB"
+            - "-c"
+            - "maintenance_work_mem=512MB"
+            - "-c"
+            - "random_page_cost=1.1"
+            - "-c"
+            - "temp_file_limit=10GB"
+            - "-c"
+            - "log_min_duration_statement=200ms"
+            - "-c"
+            - "idle_in_transaction_session_timeout=10s"
+            - "-c"
+            - "lock_timeout=1s"
+            - "-c"
+            - "statement_timeout=60s"
+            - "-c"
+            - "shared_preload_libraries=pg_stat_statements"
+            - "-c"
+            - "pg_stat_statements.max=10000"
+            - "-c"
+            - "pg_stat_statements.track=all"
+        volumes:
+            - postgres_data:/var/lib/postgresql/data/
+        environment:
+            - POSTGRES_USER=${POSTGRES_USER}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        env_file:
+            - ./.env
+        healthcheck:
+            test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+        restart: unless-stopped
+        ports:
+            - "5433:5432"
+        deploy:
+            resources:
+                limits:
+                    cpus: '1'
+                    memory: 4G
+    pgadmin:
+        container_name: hero_pgadmin
+        image: dpage/pgadmin4:5.7
+        environment:
+          - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
+          - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
+        ports:
+          - 5050:80
+        restart: unless-stopped
+        deploy:
+          resources:
+            limits:
+              cpus: '0.5'
+              memory: 1G
+
+    sender:
+        container_name: hero_sender
+        command: sh -c "uvicorn app.main:app --reload --host 0.0.0.0"
+        build:
+            context: ./sender
+            dockerfile: Dockerfile
+        ports:
+          - 8001:8000
+        volumes:
+          - ./sender:/sender
+        tty: true
+        env_file:
+            - ./.env
+        depends_on:
+          - db
+
+    receiver:
+        container_name: hero_receiver
+        command: sh -c "python3 main.py"
+        build:
+            context: ./receiver
+            dockerfile: Dockerfile
+        volumes:
+          - ./receiver:/receiver
+        tty: true
+        stdin_open: true
+        env_file:
+            - ./.env
+        depends_on:
+          - db
+
+volumes:
+    postgres_data: {}
